@@ -1,0 +1,56 @@
+name: RAMBO Trail Status Checker
+
+on:
+  schedule:
+    - cron: "0 * * * *"   # Runs every hour. Change to "*/30 * * * *" for every 30 min
+                           # Note: GitHub Actions free tier minimum is ~5 min, but every
+                           # hour is recommended to stay well within free usage limits.
+  workflow_dispatch:        # Allows manual trigger from the GitHub Actions UI
+
+jobs:
+  check-trail-status:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install requests beautifulsoup4
+
+      - name: Restore last known status from cache
+        id: cache-status
+        uses: actions/cache@v4
+        with:
+          path: last_status.txt
+          key: freeride-status   # Static key — always restores the same file
+
+      - name: Read last known status
+        id: read-status
+        run: |
+          if [ -f last_status.txt ]; then
+            echo "LAST_KNOWN_STATUS=$(cat last_status.txt)" >> $GITHUB_ENV
+          else
+            echo "LAST_KNOWN_STATUS=" >> $GITHUB_ENV
+          fi
+
+      - name: Run trail status checker
+        id: check
+        env:
+          IFTTT_WEBHOOK_KEY: ${{ secrets.IFTTT_WEBHOOK_KEY }}
+          LAST_KNOWN_STATUS: ${{ env.LAST_KNOWN_STATUS }}
+        run: python check_trail_status.py
+
+      - name: Save current status to cache file
+        run: echo "${{ steps.check.outputs.freeride_status }}" > last_status.txt
+
+      - name: Update status cache
+        uses: actions/cache/save@v4
+        with:
+          path: last_status.txt
+          key: freeride-status-${{ github.run_id }}   # Unique key so cache always updates
